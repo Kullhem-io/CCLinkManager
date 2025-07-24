@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join Zoom Call</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background-color: #121212;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      text-align: center;
+    }
+    h1 {
+      font-size: 2em;
+    }
+    a.button {
+      margin-top: 20px;
+      padding: 20px 40px;
+      background-color: #1e88e5;
+      color: white;
+      font-size: 1.5em;
+      text-decoration: none;
+      border-radius: 15px;
+      display: inline-block;
+    }
+    #loading {
+      font-size: 1.2em;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <h1>Upcoming Zoom Call</h1>
+  <div id="loading">Looking for the next call...</div>
+  <a id="zoomLink" class="button" href="#" style="display:none;" target="_blank">Join Now</a>
+  
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyB25FFIzd4YdOiRIA_B-8Qvc2RROcm_ylE",
+      authDomain: "civil-communicator-zoom.firebaseapp.com",
+      projectId: "civil-communicator-zoom",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    function showCall(url, subject, startTime) {
+      const linkEl = document.getElementById("zoomLink");
+      const loadingEl = document.getElementById("loading");
+      linkEl.href = url;
+      linkEl.innerText = `Join ${subject}`;
+      linkEl.style.display = "inline-block";
+      loadingEl.style.display = "none";
+    }
+
+    function checkNextCall() {
+      const now = new Date().toISOString();
+      db.collection("calls")
+        .where("start", ">=", now)
+        .orderBy("start", "asc")
+        .limit(1)
+        .onSnapshot(snapshot => {
+          if (!snapshot.empty) {
+            const data = snapshot.docs[0].data();
+            showCall(data.url, data.subject, data.start);
+          }
+        });
+    }
+
+    checkNextCall();
+  </script>
+</body>
+</html>
