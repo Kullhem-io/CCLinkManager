@@ -47,6 +47,7 @@
   <h1>Upcoming Zoom Call</h1>
   <div id="loading">Looking for the next call...</div>
   <div id="error" style="display:none;"></div>
+  <div id="callTime" style="display:none; margin: 15px 0; font-size: 1.1em; opacity: 0.9;"></div>
   <a id="zoomLink" class="button" href="#" style="display:none;" target="_blank">Join Now</a>
   
   <script>
@@ -70,12 +71,29 @@
         const linkEl = document.getElementById("zoomLink");
         const loadingEl = document.getElementById("loading");
         const errorEl = document.getElementById("error");
+        const callTimeEl = document.getElementById("callTime");
         
         linkEl.href = url;
         linkEl.innerText = `Join ${subject}`;
         linkEl.style.display = "inline-block";
         loadingEl.style.display = "none";
         errorEl.style.display = "none";
+        
+        // Format the date and time nicely
+        const dateStr = startTime.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+        const timeStr = startTime.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        });
+        
+        callTimeEl.textContent = `${dateStr} at ${timeStr}`;
+        callTimeEl.style.display = "block";
       }
 
       function showError(message) {
@@ -89,8 +107,26 @@
       }
 
       function checkNextCall() {
-        const now = new Date().toISOString();
+        const now = new Date();
         console.log("Checking for calls after:", now);
+        console.log("Current time object:", new Date());
+        
+        // First, let's see what's actually in the database
+        db.collection("calls").get().then(snapshot => {
+          console.log("All calls in database:", snapshot.size);
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            console.log("Call:", data);
+            console.log("Start time:", data.start);
+            console.log("Start time type:", typeof data.start);
+            if (data.start) {
+              // Handle Firestore Timestamp objects
+              const startDate = data.start.toDate ? data.start.toDate() : new Date(data.start);
+              console.log("Start time as Date:", startDate);
+              console.log("Is start time in future?", startDate > now);
+            }
+          });
+        });
         
         db.collection("calls")
           .where("start", ">=", now)
@@ -102,8 +138,14 @@
               if (!snapshot.empty) {
                 const data = snapshot.docs[0].data();
                 console.log("Call data:", data);
-                showCall(data.url, data.subject, data.start);
+                // Convert Firestore Timestamp to Date for display
+                const startDate = data.start.toDate ? data.start.toDate() : new Date(data.start);
+                showCall(data.url, data.subject, startDate);
               } else {
+                console.log("No calls found with query parameters:");
+                console.log("- start >= ", now);
+                console.log("- ordered by start asc");
+                console.log("- limit 1");
                 showError("No upcoming calls found");
               }
             },
