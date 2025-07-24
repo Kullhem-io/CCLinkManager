@@ -36,46 +36,91 @@
       font-size: 1.2em;
       opacity: 0.7;
     }
+    #error {
+      font-size: 1em;
+      color: #ff6b6b;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
   <h1>Upcoming Zoom Call</h1>
   <div id="loading">Looking for the next call...</div>
+  <div id="error" style="display:none;"></div>
   <a id="zoomLink" class="button" href="#" style="display:none;" target="_blank">Join Now</a>
   
   <script>
+    // You need to complete your Firebase config with all required fields
     const firebaseConfig = {
       apiKey: "AIzaSyB25FFIzd4YdOiRIA_B-8Qvc2RROcm_ylE",
       authDomain: "civil-communicator-zoom.firebaseapp.com",
       projectId: "civil-communicator-zoom",
+      storageBucket: "civil-communicator-zoom.appspot.com", // Add this
+      messagingSenderId: "308116448980", // Add this
+      appId: "1:308116448980:web:94507b77764e068508fd41",
+      measurementId: "G-69GRDLM4KE" // Add this
     };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
 
-    function showCall(url, subject, startTime) {
-      const linkEl = document.getElementById("zoomLink");
-      const loadingEl = document.getElementById("loading");
-      linkEl.href = url;
-      linkEl.innerText = `Join ${subject}`;
-      linkEl.style.display = "inline-block";
-      loadingEl.style.display = "none";
+    try {
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+      console.log("Firebase initialized successfully");
+
+      function showCall(url, subject, startTime) {
+        const linkEl = document.getElementById("zoomLink");
+        const loadingEl = document.getElementById("loading");
+        const errorEl = document.getElementById("error");
+        
+        linkEl.href = url;
+        linkEl.innerText = `Join ${subject}`;
+        linkEl.style.display = "inline-block";
+        loadingEl.style.display = "none";
+        errorEl.style.display = "none";
+      }
+
+      function showError(message) {
+        const loadingEl = document.getElementById("loading");
+        const errorEl = document.getElementById("error");
+        
+        loadingEl.style.display = "none";
+        errorEl.textContent = message;
+        errorEl.style.display = "block";
+        console.error("Error:", message);
+      }
+
+      function checkNextCall() {
+        const now = new Date().toISOString();
+        console.log("Checking for calls after:", now);
+        
+        db.collection("calls")
+          .where("start", ">=", now)
+          .orderBy("start", "asc")
+          .limit(1)
+          .onSnapshot(
+            snapshot => {
+              console.log("Snapshot received:", snapshot.size, "documents");
+              if (!snapshot.empty) {
+                const data = snapshot.docs[0].data();
+                console.log("Call data:", data);
+                showCall(data.url, data.subject, data.start);
+              } else {
+                showError("No upcoming calls found");
+              }
+            },
+            error => {
+              console.error("Firestore error:", error);
+              showError(`Database error: ${error.message}`);
+            }
+          );
+      }
+
+      checkNextCall();
+    } catch (error) {
+      console.error("Firebase initialization error:", error);
+      document.getElementById("error").textContent = `Initialization error: ${error.message}`;
+      document.getElementById("error").style.display = "block";
+      document.getElementById("loading").style.display = "none";
     }
-
-    function checkNextCall() {
-      const now = new Date().toISOString();
-      db.collection("calls")
-        .where("start", ">=", now)
-        .orderBy("start", "asc")
-        .limit(1)
-        .onSnapshot(snapshot => {
-          if (!snapshot.empty) {
-            const data = snapshot.docs[0].data();
-            showCall(data.url, data.subject, data.start);
-          }
-        });
-    }
-
-    checkNextCall();
   </script>
 </body>
 </html>
