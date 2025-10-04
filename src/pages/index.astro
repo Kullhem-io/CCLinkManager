@@ -1,0 +1,567 @@
+---
+// Astro page component
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CC Link Manager - Zoom Calls</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>CC Link Manager</h1>
+      <p class="subtitle">Zoom Call Management & Troubleshooting</p>
+    </header>
+
+    <main>
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Loading calls...</p>
+      </div>
+
+      <div class="error" id="error" style="display:none;">
+        <div class="error-icon">⚠️</div>
+        <p id="error-message"></p>
+      </div>
+
+      <div class="calls-container" id="calls-container" style="display:none;">
+        <div class="tabs">
+          <button class="tab-button active" id="upcoming-tab" onclick="showTab('upcoming')">
+            Upcoming Calls
+            <span class="tab-count" id="upcoming-count">0</span>
+          </button>
+          <button class="tab-button" id="past-tab" onclick="showTab('past')">
+            Past Calls
+            <span class="tab-count" id="past-count">0</span>
+          </button>
+        </div>
+
+        <div class="tab-content">
+          <div id="upcoming-calls" class="call-list">
+            <!-- Upcoming calls will be populated here -->
+          </div>
+          <div id="past-calls" class="call-list" style="display:none;">
+            <!-- Past calls will be populated here -->
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyB25FFIzd4YdOiRIA_B-8Qvc2RROcm_ylE",
+      authDomain: "civil-communicator-zoom.firebaseapp.com",
+      projectId: "civil-communicator-zoom",
+      storageBucket: "civil-communicator-zoom.appspot.com",
+      messagingSenderId: "308116448980",
+      appId: "1:308116448980:web:94507b77764e068508fd41",
+      measurementId: "G-69GRDLM4KE"
+    };
+
+    let allCalls = [];
+    let currentTab = 'upcoming';
+
+    try {
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+      console.log("Firebase initialized successfully");
+
+      function formatDateTime(date) {
+        const dateStr = date.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+        const timeStr = date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        });
+        return { dateStr, timeStr };
+      }
+
+      function createCallCard(call, isPast = false) {
+        const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
+        const { dateStr, timeStr } = formatDateTime(startDate);
+        
+        const card = document.createElement('div');
+        card.className = `call-card ${isPast ? 'past' : 'upcoming'}`;
+        
+        const statusBadge = isPast ? 
+          `<span class="status-badge past">Past</span>` : 
+          `<span class="status-badge upcoming">Upcoming</span>`;
+        
+        const timeRemaining = !isPast ? getTimeRemaining(startDate) : '';
+        
+        card.innerHTML = `
+          <div class="call-header">
+            <h3 class="call-subject">${call.subject || 'Untitled Call'}</h3>
+            ${statusBadge}
+          </div>
+          <div class="call-details">
+            <div class="call-time">
+              <span class="date">${dateStr}</span>
+              <span class="time">${timeStr}</span>
+              ${timeRemaining}
+            </div>
+            <div class="call-actions">
+              <a href="${call.url}" class="join-button" target="_blank" rel="noopener noreferrer">
+                ${isPast ? 'View Details' : 'Join Call'}
+              </a>
+              <button class="copy-button" onclick="copyToClipboard('${call.url}')" title="Copy link">
+                📋
+              </button>
+            </div>
+          </div>
+        `;
+        
+        return card;
+      }
+
+      function getTimeRemaining(startDate) {
+        const now = new Date();
+        const diff = startDate - now;
+        
+        if (diff <= 0) return '';
+        
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (days > 0) {
+          return `<span class="time-remaining">${days}d ${hours}h remaining</span>`;
+        } else if (hours > 0) {
+          return `<span class="time-remaining">${hours}h ${minutes}m remaining</span>`;
+        } else {
+          return `<span class="time-remaining">${minutes}m remaining</span>`;
+        }
+      }
+
+      function updateCallLists() {
+        const now = new Date();
+        const upcomingCalls = allCalls.filter(call => {
+          const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
+          return startDate >= now;
+        }).sort((a, b) => {
+          const dateA = a.start.toDate ? a.start.toDate() : new Date(a.start);
+          const dateB = b.start.toDate ? b.start.toDate() : new Date(b.start);
+          return dateA - dateB;
+        });
+
+        const pastCalls = allCalls.filter(call => {
+          const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
+          return startDate < now;
+        }).sort((a, b) => {
+          const dateA = a.start.toDate ? a.start.toDate() : new Date(a.start);
+          const dateB = b.start.toDate ? b.start.toDate() : new Date(b.start);
+          return dateB - dateA;
+        });
+
+        // Update counts
+        document.getElementById('upcoming-count').textContent = upcomingCalls.length;
+        document.getElementById('past-count').textContent = pastCalls.length;
+
+        // Update upcoming calls
+        const upcomingContainer = document.getElementById('upcoming-calls');
+        upcomingContainer.innerHTML = '';
+        if (upcomingCalls.length === 0) {
+          upcomingContainer.innerHTML = '<div class="no-calls">No upcoming calls scheduled</div>';
+        } else {
+          upcomingCalls.forEach(call => {
+            upcomingContainer.appendChild(createCallCard(call, false));
+          });
+        }
+
+        // Update past calls
+        const pastContainer = document.getElementById('past-calls');
+        pastContainer.innerHTML = '';
+        if (pastCalls.length === 0) {
+          pastContainer.innerHTML = '<div class="no-calls">No past calls found</div>';
+        } else {
+          pastCalls.forEach(call => {
+            pastContainer.appendChild(createCallCard(call, true));
+          });
+        }
+
+        // Show the calls container
+        document.getElementById('calls-container').style.display = 'block';
+        document.getElementById('loading').style.display = 'none';
+      }
+
+      function showTab(tabName) {
+        currentTab = tabName;
+        
+        // Update tab buttons
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+        
+        // Update content
+        document.querySelectorAll('.call-list').forEach(list => list.style.display = 'none');
+        document.getElementById(`${tabName}-calls`).style.display = 'block';
+      }
+
+      function showError(message) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error-message').textContent = message;
+        document.getElementById('error').style.display = 'block';
+        console.error("Error:", message);
+      }
+
+      function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+          // Show a brief success message
+          const button = event.target.closest('.copy-button');
+          const originalText = button.innerHTML;
+          button.innerHTML = '✓';
+          button.style.background = '#4caf50';
+          setTimeout(() => {
+            button.innerHTML = originalText;
+            button.style.background = '';
+          }, 1000);
+        }).catch(err => {
+          console.error('Failed to copy: ', err);
+        });
+      }
+
+      // Load all calls
+      function loadAllCalls() {
+        db.collection("calls")
+          .orderBy("start", "desc")
+          .onSnapshot(
+            snapshot => {
+              console.log("Snapshot received:", snapshot.size, "documents");
+              allCalls = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+              }));
+              updateCallLists();
+            },
+            error => {
+              console.error("Firestore error:", error);
+              showError(`Database error: ${error.message}`);
+            }
+          );
+      }
+
+      // Initialize
+      loadAllCalls();
+
+      // Make functions global for onclick handlers
+      window.showTab = showTab;
+      window.copyToClipboard = copyToClipboard;
+
+    } catch (error) {
+      console.error("Firebase initialization error:", error);
+      showError(`Initialization error: ${error.message}`);
+    }
+  </script>
+</body>
+</html>
+
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    color: #333;
+    line-height: 1.6;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 3rem;
+    color: white;
+  }
+
+  header h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  }
+
+  .subtitle {
+    font-size: 1.2rem;
+    opacity: 0.9;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 3rem;
+    color: white;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255,255,255,0.3);
+    border-top: 4px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .error {
+    background: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 2rem 0;
+    text-align: center;
+    color: #f44336;
+  }
+
+  .error-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .calls-container {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+  }
+
+  .tabs {
+    display: flex;
+    background: rgba(0,0,0,0.05);
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+  }
+
+  .tab-button {
+    flex: 1;
+    padding: 1rem 1.5rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .tab-button:hover {
+    background: rgba(0,0,0,0.05);
+    color: #333;
+  }
+
+  .tab-button.active {
+    background: white;
+    color: #667eea;
+    font-weight: 600;
+  }
+
+  .tab-count {
+    background: #667eea;
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .tab-button.active .tab-count {
+    background: #5a6fd8;
+  }
+
+  .tab-content {
+    padding: 2rem;
+  }
+
+  .call-list {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  .call-card {
+    background: white;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+
+  .call-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  }
+
+  .call-card.past {
+    opacity: 0.7;
+    border-left: 4px solid #ccc;
+  }
+
+  .call-card.upcoming {
+    border-left: 4px solid #4caf50;
+  }
+
+  .call-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .call-subject {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #333;
+    margin: 0;
+  }
+
+  .status-badge {
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .status-badge.upcoming {
+    background: #e8f5e8;
+    color: #2e7d32;
+  }
+
+  .status-badge.past {
+    background: #f5f5f5;
+    color: #666;
+  }
+
+  .call-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .call-time {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .call-time .date {
+    font-weight: 600;
+    color: #555;
+  }
+
+  .call-time .time {
+    color: #777;
+    font-size: 0.9rem;
+  }
+
+  .time-remaining {
+    color: #4caf50;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: #e8f5e8;
+    padding: 0.2rem 0.5rem;
+    border-radius: 8px;
+    display: inline-block;
+    margin-top: 0.3rem;
+  }
+
+  .call-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .join-button {
+    background: #667eea;
+    color: white;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+
+  .join-button:hover {
+    background: #5a6fd8;
+    transform: translateY(-1px);
+  }
+
+  .copy-button {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 0.8rem;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+  }
+
+  .copy-button:hover {
+    background: #e0e0e0;
+  }
+
+  .no-calls {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 3rem;
+  }
+
+  @media (max-width: 768px) {
+    .container {
+      padding: 1rem;
+    }
+
+    header h1 {
+      font-size: 2rem;
+    }
+
+    .call-details {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .call-actions {
+      width: 100%;
+      justify-content: flex-end;
+    }
+
+    .tab-button {
+      padding: 0.8rem 1rem;
+      font-size: 0.9rem;
+    }
+  }
+</style>
