@@ -19,7 +19,59 @@
       appId: "1:308116448980:web:94507b77764e068508fd41",
       measurementId: "G-69GRDLM4KE"
     };
+
+    // Global variables
+    let allCalls = [];
+    let currentTab = 'upcoming';
+
+    // Global functions that need to be available immediately
+    function showMainInterface() {
+      document.getElementById('main-interface').style.display = 'block';
+      document.getElementById('admin-interface').style.display = 'none';
+      document.getElementById('admin-button').style.display = 'block';
+    }
+
+    function showAdminInterface() {
+      document.getElementById('main-interface').style.display = 'none';
+      document.getElementById('admin-interface').style.display = 'block';
+      document.getElementById('admin-button').style.display = 'none';
+    }
+
+    function showTab(tabName) {
+      currentTab = tabName;
+      
+      // Update tab buttons
+      document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`${tabName}-tab`).classList.add('active');
+      
+      // Update content
+      document.querySelectorAll('.call-list').forEach(list => list.style.display = 'none');
+      document.getElementById(`${tabName}-calls`).style.display = 'block';
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        // Show a brief success message
+        const button = event.target.closest('.copy-button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '✓';
+        button.style.background = '#4caf50';
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.style.background = '';
+        }, 1000);
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+      });
+    }
+
+    // Make functions globally available
+    window.showMainInterface = showMainInterface;
+    window.showAdminInterface = showAdminInterface;
+    window.showTab = showTab;
+    window.copyToClipboard = copyToClipboard;
   </script>
+  
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
@@ -163,11 +215,11 @@
     }
 
     function updateCallLists() {
-      console.log("updateCallLists called with allCalls:", allCalls);
+      console.log("updateCallLists called with allCalls:", window.allCalls);
       const now = new Date();
       console.log("Current time:", now);
       
-      const upcomingCalls = allCalls.filter(call => {
+      const upcomingCalls = window.allCalls.filter(call => {
         const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
         console.log("Checking call:", call.subject, "Start:", startDate, "Is future:", startDate >= now);
         return startDate >= now;
@@ -177,7 +229,7 @@
         return dateA - dateB;
       });
 
-      const pastCalls = allCalls.filter(call => {
+      const pastCalls = window.allCalls.filter(call => {
         const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
         return startDate < now;
       }).sort((a, b) => {
@@ -336,11 +388,11 @@
                 snapshot.forEach(doc => {
                   console.log("Real-time doc:", doc.id, doc.data());
                 });
-                allCalls = snapshot.docs.map(doc => ({
+                window.allCalls = snapshot.docs.map(doc => ({
                   id: doc.id,
                   ...doc.data()
                 }));
-                console.log("All calls array:", allCalls);
+                console.log("All calls array:", window.allCalls);
                 updateCallLists();
               },
               error => {
