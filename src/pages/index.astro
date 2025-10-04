@@ -1,79 +1,410 @@
----
-// Astro page component
----
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CC Link Manager - Zoom Calls</title>
-  <!-- Load Firebase SDKs with proper error handling -->
-  <script>
-    window.firebaseConfig = {
-      apiKey: "AIzaSyB25FFIzd4YdOiRIA_B-8Qvc2RROcm_ylE",
-      authDomain: "civil-communicator-zoom.firebaseapp.com",
-      projectId: "civil-communicator-zoom",
-      storageBucket: "civil-communicator-zoom.appspot.com",
-      messagingSenderId: "308116448980",
-      appId: "1:308116448980:web:94507b77764e068508fd41",
-      measurementId: "G-69GRDLM4KE"
-    };
-
-    // Global variables
-    let allCalls = [];
-    let currentTab = 'upcoming';
-
-    // Global functions that need to be available immediately
-    function showMainInterface() {
-      document.getElementById('main-interface').style.display = 'block';
-      document.getElementById('admin-interface').style.display = 'none';
-      document.getElementById('admin-button').style.display = 'block';
-    }
-
-    function showAdminInterface() {
-      document.getElementById('main-interface').style.display = 'none';
-      document.getElementById('admin-interface').style.display = 'block';
-      document.getElementById('admin-button').style.display = 'none';
-    }
-
-    function showTab(tabName) {
-      currentTab = tabName;
-      
-      // Update tab buttons
-      document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-      document.getElementById(`${tabName}-tab`).classList.add('active');
-      
-      // Update content
-      document.querySelectorAll('.call-list').forEach(list => list.style.display = 'none');
-      document.getElementById(`${tabName}-calls`).style.display = 'block';
-    }
-
-    function copyToClipboard(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        // Show a brief success message
-        const button = event.target.closest('.copy-button');
-        const originalText = button.innerHTML;
-        button.innerHTML = '✓';
-        button.style.background = '#4caf50';
-        setTimeout(() => {
-          button.innerHTML = originalText;
-          button.style.background = '';
-        }, 1000);
-      }).catch(err => {
-        console.error('Failed to copy: ', err);
-      });
-    }
-
-    // Make functions globally available
-    window.showMainInterface = showMainInterface;
-    window.showAdminInterface = showAdminInterface;
-    window.showTab = showTab;
-    window.copyToClipboard = copyToClipboard;
-  </script>
-  
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    /* Main simple interface for kids */
+    .main-interface {
+      text-align: center;
+      color: white;
+      width: 100%;
+      max-width: 600px;
+      padding: 2rem;
+    }
+
+    .next-call {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    .call-time {
+      font-size: 1.5rem;
+      font-weight: 600;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .join-button {
+      background: #4caf50;
+      color: white;
+      padding: 2rem 4rem;
+      border-radius: 20px;
+      text-decoration: none;
+      font-size: 2rem;
+      font-weight: 700;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      transition: all 0.3s ease;
+      border: none;
+      cursor: pointer;
+      display: inline-block;
+    }
+
+    .join-button:hover {
+      background: #45a049;
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+    }
+
+    .call-subject {
+      font-size: 1.2rem;
+      opacity: 0.9;
+      font-weight: 500;
+    }
+
+    .no-calls {
+      color: white;
+      font-size: 1.5rem;
+      opacity: 0.8;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: white;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .error {
+      background: rgba(244, 67, 54, 0.1);
+      border: 1px solid rgba(244, 67, 54, 0.3);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 2rem 0;
+      text-align: center;
+      color: #f44336;
+    }
+
+    .error-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Admin interface */
+    .admin-interface {
+      max-width: 1200px;
+      width: 100%;
+      padding: 2rem;
+    }
+
+    .admin-interface header {
+      text-align: center;
+      margin-bottom: 3rem;
+      color: white;
+    }
+
+    .admin-interface h1 {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .back-button {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      padding: 0.8rem 1.5rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+    }
+
+    .back-button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* Admin button */
+    .admin-button {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(10px);
+      z-index: 1000;
+    }
+
+    .admin-button:hover {
+      background: rgba(255,255,255,0.3);
+      transform: scale(1.1);
+    }
+
+    .admin-interface .calls-container {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+
+    .tabs {
+      display: flex;
+      background: rgba(0,0,0,0.05);
+      border-bottom: 1px solid rgba(0,0,0,0.1);
+    }
+
+    .tab-button {
+      flex: 1;
+      padding: 1rem 1.5rem;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .tab-button:hover {
+      background: rgba(0,0,0,0.05);
+      color: #333;
+    }
+
+    .tab-button.active {
+      background: white;
+      color: #667eea;
+      font-weight: 600;
+    }
+
+    .tab-count {
+      background: #667eea;
+      color: white;
+      padding: 0.2rem 0.5rem;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .tab-button.active .tab-count {
+      background: #5a6fd8;
+    }
+
+    .tab-content {
+      padding: 2rem;
+    }
+
+    .call-list {
+      display: grid;
+      gap: 1.5rem;
+    }
+
+    .call-card {
+      background: white;
+      border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    .call-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+
+    .call-card.past {
+      opacity: 0.7;
+      border-left: 4px solid #ccc;
+    }
+
+    .call-card.upcoming {
+      border-left: 4px solid #4caf50;
+    }
+
+    .call-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+
+    .call-subject {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #333;
+      margin: 0;
+    }
+
+    .status-badge {
+      padding: 0.3rem 0.8rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-badge.upcoming {
+      background: #e8f5e8;
+      color: #2e7d32;
+    }
+
+    .status-badge.past {
+      background: #f5f5f5;
+      color: #666;
+    }
+
+    .call-details {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .call-time {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .call-time .date {
+      font-weight: 600;
+      color: #555;
+    }
+
+    .call-time .time {
+      color: #777;
+      font-size: 0.9rem;
+    }
+
+    .time-remaining {
+      color: #4caf50;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #e8f5e8;
+      padding: 0.2rem 0.5rem;
+      border-radius: 8px;
+      display: inline-block;
+      margin-top: 0.3rem;
+    }
+
+    .call-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .admin-interface .join-button {
+      background: #667eea;
+      color: white;
+      padding: 0.8rem 1.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .admin-interface .join-button:hover {
+      background: #5a6fd8;
+      transform: translateY(-1px);
+    }
+
+    .copy-button {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 0.8rem;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+    }
+
+    .copy-button:hover {
+      background: #e0e0e0;
+    }
+
+    .no-calls {
+      text-align: center;
+      color: #666;
+      font-style: italic;
+      padding: 3rem;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 1rem;
+      }
+
+      .main-interface h1 {
+        font-size: 2rem;
+      }
+
+      .call-details {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+      }
+
+      .call-actions {
+        width: 100%;
+        justify-content: flex-end;
+      }
+
+      .tab-button {
+        padding: 0.8rem 1rem;
+        font-size: 0.9rem;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -139,9 +470,68 @@
   </div>
 
   <script>
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyB25FFIzd4YdOiRIA_B-8Qvc2RROcm_ylE",
+      authDomain: "civil-communicator-zoom.firebaseapp.com",
+      projectId: "civil-communicator-zoom",
+      storageBucket: "civil-communicator-zoom.appspot.com",
+      messagingSenderId: "308116448980",
+      appId: "1:308116448980:web:94507b77764e068508fd41",
+      measurementId: "G-69GRDLM4KE"
+    };
+
     let allCalls = [];
     let currentTab = 'upcoming';
 
+    // Interface functions
+    function showMainInterface() {
+      document.getElementById('main-interface').style.display = 'block';
+      document.getElementById('admin-interface').style.display = 'none';
+      document.getElementById('admin-button').style.display = 'block';
+    }
+
+    function showAdminInterface() {
+      document.getElementById('main-interface').style.display = 'none';
+      document.getElementById('admin-interface').style.display = 'block';
+      document.getElementById('admin-button').style.display = 'none';
+    }
+
+    function showTab(tabName) {
+      currentTab = tabName;
+      
+      // Update tab buttons
+      document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`${tabName}-tab`).classList.add('active');
+      
+      // Update content
+      document.querySelectorAll('.call-list').forEach(list => list.style.display = 'none');
+      document.getElementById(`${tabName}-calls`).style.display = 'block';
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        // Show a brief success message
+        const button = event.target.closest('.copy-button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '✓';
+        button.style.background = '#4caf50';
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.style.background = '';
+        }, 1000);
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+      });
+    }
+
+    // Make functions global
+    window.showMainInterface = showMainInterface;
+    window.showAdminInterface = showAdminInterface;
+    window.showTab = showTab;
+    window.copyToClipboard = copyToClipboard;
+
+    // Firebase functions
     function formatDateTime(date) {
       const dateStr = date.toLocaleDateString('en-US', { 
         weekday: 'long', 
@@ -215,11 +605,11 @@
     }
 
     function updateCallLists() {
-      console.log("updateCallLists called with allCalls:", window.allCalls);
+      console.log("updateCallLists called with allCalls:", allCalls);
       const now = new Date();
       console.log("Current time:", now);
       
-      const upcomingCalls = window.allCalls.filter(call => {
+      const upcomingCalls = allCalls.filter(call => {
         const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
         console.log("Checking call:", call.subject, "Start:", startDate, "Is future:", startDate >= now);
         return startDate >= now;
@@ -229,7 +619,7 @@
         return dateA - dateB;
       });
 
-      const pastCalls = window.allCalls.filter(call => {
+      const pastCalls = allCalls.filter(call => {
         const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
         return startDate < now;
       }).sort((a, b) => {
@@ -300,18 +690,6 @@
       }
     }
 
-    function showTab(tabName) {
-      currentTab = tabName;
-      
-      // Update tab buttons
-      document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-      document.getElementById(`${tabName}-tab`).classList.add('active');
-      
-      // Update content
-      document.querySelectorAll('.call-list').forEach(list => list.style.display = 'none');
-      document.getElementById(`${tabName}-calls`).style.display = 'block';
-    }
-
     function showError(message) {
       document.getElementById('loading').style.display = 'none';
       document.getElementById('error-message').textContent = message;
@@ -319,506 +697,91 @@
       console.error("Error:", message);
     }
 
-    function copyToClipboard(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        // Show a brief success message
-        const button = event.target.closest('.copy-button');
-        const originalText = button.innerHTML;
-        button.innerHTML = '✓';
-        button.style.background = '#4caf50';
-        setTimeout(() => {
-          button.innerHTML = originalText;
-          button.style.background = '';
-        }, 1000);
-      }).catch(err => {
-        console.error('Failed to copy: ', err);
-      });
-    }
+    // Initialize Firebase
+    try {
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+      console.log("Firebase initialized successfully");
 
-    function showMainInterface() {
-      document.getElementById('main-interface').style.display = 'block';
-      document.getElementById('admin-interface').style.display = 'none';
-      document.getElementById('admin-button').style.display = 'block';
-    }
-
-    function showAdminInterface() {
-      document.getElementById('main-interface').style.display = 'none';
-      document.getElementById('admin-interface').style.display = 'block';
-      document.getElementById('admin-button').style.display = 'none';
-    }
-
-    // Ensure functions are available immediately for onclick handlers
-    if (typeof window !== 'undefined') {
-      window.showTab = showTab;
-      window.copyToClipboard = copyToClipboard;
-      window.showMainInterface = showMainInterface;
-      window.showAdminInterface = showAdminInterface;
-    }
-
-    // Wait for DOM and Firebase to be ready
-    function initializeApp() {
-      try {
-        console.log("Initializing app...");
+      function checkNextCall() {
+        const now = new Date();
+        console.log("Checking for calls after:", now);
         
-        // Initialize Firebase
-        firebase.initializeApp(window.firebaseConfig);
-        const db = firebase.firestore();
-        console.log("Firebase initialized successfully");
-
-        // Load all calls
-        function loadAllCalls() {
-          console.log("Attempting to load calls from Firestore...");
-          
-          // First, let's try a simple query to see what's in the database
-          db.collection("calls").get().then(snapshot => {
-            console.log("Direct query - Total documents:", snapshot.size);
-            snapshot.forEach(doc => {
-              console.log("Document:", doc.id, doc.data());
-            });
-          }).catch(err => {
-            console.error("Direct query error:", err);
+        // First, let's see what's actually in the database
+        db.collection("calls").get().then(snapshot => {
+          console.log("All calls in database:", snapshot.size);
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            console.log("Call:", data);
+            console.log("Start time:", data.start);
+            console.log("Start time type:", typeof data.start);
+            if (data.start) {
+              // Handle Firestore Timestamp objects
+              const startDate = data.start.toDate ? data.start.toDate() : new Date(data.start);
+              console.log("Start time as Date:", startDate);
+              console.log("Is start time in future?", startDate > now);
+            }
           });
-
-          // Then set up the real-time listener
-          db.collection("calls")
-            .orderBy("start", "desc")
-            .onSnapshot(
-              snapshot => {
-                console.log("Real-time snapshot received:", snapshot.size, "documents");
-                snapshot.forEach(doc => {
-                  console.log("Real-time doc:", doc.id, doc.data());
-                });
-                window.allCalls = snapshot.docs.map(doc => ({
-                  id: doc.id,
-                  ...doc.data()
-                }));
-                console.log("All calls array:", window.allCalls);
-                updateCallLists();
-              },
-              error => {
-                console.error("Firestore real-time error:", error);
-                showError(`Database error: ${error.message}`);
+        });
+        
+        db.collection("calls")
+          .where("start", ">=", now)
+          .orderBy("start", "asc")
+          .limit(1)
+          .onSnapshot(
+            snapshot => {
+              console.log("Snapshot received:", snapshot.size, "documents");
+              if (!snapshot.empty) {
+                const data = snapshot.docs[0].data();
+                console.log("Call data:", data);
+                // Convert Firestore Timestamp to Date for display
+                const startDate = data.start.toDate ? data.start.toDate() : new Date(data.start);
+                showCall(data.url, data.subject, startDate);
+              } else {
+                console.log("No calls found with query parameters:");
+                console.log("- start >= ", now);
+                console.log("- ordered by start asc");
+                console.log("- limit 1");
+                showError("No upcoming calls found");
               }
-            );
-        }
-
-        // Initialize
-        loadAllCalls();
-
-      } catch (error) {
-        console.error("Firebase initialization error:", error);
-        showError(`Initialization error: ${error.message}`);
+            },
+            error => {
+              console.error("Firestore error:", error);
+              showError(`Database error: ${error.message}`);
+            }
+          );
       }
-    }
 
+      function showCall(url, subject, startTime) {
+        const linkEl = document.getElementById("join-button");
+        const loadingEl = document.getElementById("loading");
+        const errorEl = document.getElementById("error");
+        const callTimeEl = document.getElementById("call-time");
+        const nextCallEl = document.getElementById("next-call");
+        const noCallsEl = document.getElementById("no-calls");
+        
+        linkEl.href = url;
+        linkEl.innerText = `Join ${subject || 'Call'}`;
+        nextCallEl.style.display = "block";
+        loadingEl.style.display = "none";
+        errorEl.style.display = "none";
+        noCallsEl.style.display = "none";
+        
+        // Format the date and time nicely
+        const { dateStr, timeStr } = formatDateTime(startTime);
+        
+        callTimeEl.textContent = `${dateStr} at ${timeStr}`;
+        
+        if (subject) {
+          document.getElementById("call-subject").textContent = subject;
+        }
+      }
 
-    // Initialize when everything is loaded
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initializeApp);
-    } else {
-      // DOM is already loaded
-      setTimeout(initializeApp, 500); // Longer delay to ensure Firebase scripts are loaded
+      checkNextCall();
+    } catch (error) {
+      console.error("Firebase initialization error:", error);
+      showError(`Initialization error: ${error.message}`);
     }
   </script>
 </body>
 </html>
-
-<style>
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
-
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-    color: #333;
-    line-height: 1.6;
-    margin: 0;
-    padding: 0;
-  }
-
-  .container {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-  }
-
-  /* Main simple interface for kids */
-  .main-interface {
-    text-align: center;
-    color: white;
-    width: 100%;
-    max-width: 600px;
-    padding: 2rem;
-  }
-
-  .next-call {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2rem;
-  }
-
-  .call-time {
-    font-size: 1.5rem;
-    font-weight: 600;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  }
-
-  .join-button {
-    background: #4caf50;
-    color: white;
-    padding: 2rem 4rem;
-    border-radius: 20px;
-    text-decoration: none;
-    font-size: 2rem;
-    font-weight: 700;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    transition: all 0.3s ease;
-    border: none;
-    cursor: pointer;
-    display: inline-block;
-  }
-
-  .join-button:hover {
-    background: #45a049;
-    transform: translateY(-4px);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
-  }
-
-  .call-subject {
-    font-size: 1.2rem;
-    opacity: 0.9;
-    font-weight: 500;
-  }
-
-  .no-calls {
-    color: white;
-    font-size: 1.5rem;
-    opacity: 0.8;
-  }
-
-  /* Admin interface */
-  .admin-interface {
-    max-width: 1200px;
-    width: 100%;
-    padding: 2rem;
-  }
-
-  .admin-interface header {
-    text-align: center;
-    margin-bottom: 3rem;
-    color: white;
-  }
-
-  .admin-interface h1 {
-    font-size: 3rem;
-    font-weight: 700;
-    margin-bottom: 1rem;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  }
-
-  .back-button {
-    background: rgba(255,255,255,0.2);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 0.8rem 1.5rem;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 1rem;
-    transition: all 0.2s ease;
-  }
-
-  .back-button:hover {
-    background: rgba(255,255,255,0.3);
-  }
-
-  /* Admin button */
-  .admin-button {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: rgba(255,255,255,0.2);
-    border: 1px solid rgba(255,255,255,0.3);
-    color: white;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 1.2rem;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(10px);
-    z-index: 1000;
-  }
-
-  .admin-button:hover {
-    background: rgba(255,255,255,0.3);
-    transform: scale(1.1);
-  }
-
-  .loading {
-    text-align: center;
-    padding: 3rem;
-    color: white;
-  }
-
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 4px solid rgba(255,255,255,0.3);
-    border-top: 4px solid white;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 1rem;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  .error {
-    background: rgba(244, 67, 54, 0.1);
-    border: 1px solid rgba(244, 67, 54, 0.3);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin: 2rem 0;
-    text-align: center;
-    color: #f44336;
-  }
-
-  .error-icon {
-    font-size: 2rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .admin-interface .calls-container {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-    backdrop-filter: blur(10px);
-    overflow: hidden;
-  }
-
-  .tabs {
-    display: flex;
-    background: rgba(0,0,0,0.05);
-    border-bottom: 1px solid rgba(0,0,0,0.1);
-  }
-
-  .tab-button {
-    flex: 1;
-    padding: 1rem 1.5rem;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 500;
-    color: #666;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-  }
-
-  .tab-button:hover {
-    background: rgba(0,0,0,0.05);
-    color: #333;
-  }
-
-  .tab-button.active {
-    background: white;
-    color: #667eea;
-    font-weight: 600;
-  }
-
-  .tab-count {
-    background: #667eea;
-    color: white;
-    padding: 0.2rem 0.5rem;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 600;
-  }
-
-  .tab-button.active .tab-count {
-    background: #5a6fd8;
-  }
-
-  .tab-content {
-    padding: 2rem;
-  }
-
-  .call-list {
-    display: grid;
-    gap: 1.5rem;
-  }
-
-  .call-card {
-    background: white;
-    border: 1px solid rgba(0,0,0,0.1);
-    border-radius: 12px;
-    padding: 1.5rem;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  }
-
-  .call-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-  }
-
-  .call-card.past {
-    opacity: 0.7;
-    border-left: 4px solid #ccc;
-  }
-
-  .call-card.upcoming {
-    border-left: 4px solid #4caf50;
-  }
-
-  .call-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1rem;
-  }
-
-  .call-subject {
-    font-size: 1.3rem;
-    font-weight: 600;
-    color: #333;
-    margin: 0;
-  }
-
-  .status-badge {
-    padding: 0.3rem 0.8rem;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .status-badge.upcoming {
-    background: #e8f5e8;
-    color: #2e7d32;
-  }
-
-  .status-badge.past {
-    background: #f5f5f5;
-    color: #666;
-  }
-
-  .call-details {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .call-time {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-
-  .call-time .date {
-    font-weight: 600;
-    color: #555;
-  }
-
-  .call-time .time {
-    color: #777;
-    font-size: 0.9rem;
-  }
-
-  .time-remaining {
-    color: #4caf50;
-    font-size: 0.8rem;
-    font-weight: 600;
-    background: #e8f5e8;
-    padding: 0.2rem 0.5rem;
-    border-radius: 8px;
-    display: inline-block;
-    margin-top: 0.3rem;
-  }
-
-  .call-actions {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-
-  .admin-interface .join-button {
-    background: #667eea;
-    color: white;
-    padding: 0.8rem 1.5rem;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    transition: all 0.2s ease;
-    border: none;
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-
-  .admin-interface .join-button:hover {
-    background: #5a6fd8;
-    transform: translateY(-1px);
-  }
-
-  .copy-button {
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 0.8rem;
-    cursor: pointer;
-    font-size: 1rem;
-    transition: all 0.2s ease;
-  }
-
-  .copy-button:hover {
-    background: #e0e0e0;
-  }
-
-  .no-calls {
-    text-align: center;
-    color: #666;
-    font-style: italic;
-    padding: 3rem;
-  }
-
-  @media (max-width: 768px) {
-    .container {
-      padding: 1rem;
-    }
-
-    header h1 {
-      font-size: 2rem;
-    }
-
-    .call-details {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1rem;
-    }
-
-    .call-actions {
-      width: 100%;
-      justify-content: flex-end;
-    }
-
-    .tab-button {
-      padding: 0.8rem 1rem;
-      font-size: 0.9rem;
-    }
-  }
-</style>
