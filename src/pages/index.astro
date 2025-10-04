@@ -8,21 +8,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CC Link Manager - Zoom Calls</title>
+  <!-- Load Firebase SDKs with proper error handling -->
+  <script>
+    window.firebaseConfig = {
+      apiKey: "AIzaSyB25FFIzd4YdOiRIA_B-8Qvc2RROcm_ylE",
+      authDomain: "civil-communicator-zoom.firebaseapp.com",
+      projectId: "civil-communicator-zoom",
+      storageBucket: "civil-communicator-zoom.appspot.com",
+      messagingSenderId: "308116448980",
+      appId: "1:308116448980:web:94507b77764e068508fd41",
+      measurementId: "G-69GRDLM4KE"
+    };
+  </script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-  <script>
-    // Ensure Firebase is loaded before running the main script
-    window.addEventListener('load', function() {
-      if (typeof firebase === 'undefined') {
-        console.error('Firebase not loaded properly');
-        document.getElementById('error-message').textContent = 'Failed to load Firebase SDK';
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('loading').style.display = 'none';
-        return;
-      }
-      console.log('Firebase SDK loaded successfully');
-    });
-  </script>
 </head>
 <body>
   <div class="container">
@@ -67,220 +66,225 @@
   </div>
 
   <script>
-    // Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyB25FFIzd4YdOiRIA_B-8Qvc2RROcm_ylE",
-      authDomain: "civil-communicator-zoom.firebaseapp.com",
-      projectId: "civil-communicator-zoom",
-      storageBucket: "civil-communicator-zoom.appspot.com",
-      messagingSenderId: "308116448980",
-      appId: "1:308116448980:web:94507b77764e068508fd41",
-      measurementId: "G-69GRDLM4KE"
-    };
-
     let allCalls = [];
     let currentTab = 'upcoming';
 
-    try {
-      // Check if Firebase is available
-      if (typeof firebase === 'undefined') {
-        throw new Error('Firebase SDK not loaded');
-      }
+    function formatDateTime(date) {
+      const dateStr = date.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const timeStr = date.toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      });
+      return { dateStr, timeStr };
+    }
+
+    function getTimeRemaining(startDate) {
+      const now = new Date();
+      const diff = startDate - now;
       
-      console.log("Firebase SDK loaded:", firebase);
-      firebase.initializeApp(firebaseConfig);
-      const db = firebase.firestore();
-      console.log("Firebase initialized successfully");
-      console.log("Database object:", db);
-
-      function formatDateTime(date) {
-        const dateStr = date.toLocaleDateString('en-US', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
-        });
-        const timeStr = date.toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit',
-          hour12: true 
-        });
-        return { dateStr, timeStr };
+      if (diff <= 0) return '';
+      
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      
+      if (days > 0) {
+        return `<span class="time-remaining">${days}d ${hours}h remaining</span>`;
+      } else if (hours > 0) {
+        return `<span class="time-remaining">${hours}h ${minutes}m remaining</span>`;
+      } else {
+        return `<span class="time-remaining">${minutes}m remaining</span>`;
       }
+    }
 
-      function createCallCard(call, isPast = false) {
+    function createCallCard(call, isPast = false) {
+      const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
+      const { dateStr, timeStr } = formatDateTime(startDate);
+      
+      const card = document.createElement('div');
+      card.className = `call-card ${isPast ? 'past' : 'upcoming'}`;
+      
+      const statusBadge = isPast ? 
+        `<span class="status-badge past">Past</span>` : 
+        `<span class="status-badge upcoming">Upcoming</span>`;
+      
+      const timeRemaining = !isPast ? getTimeRemaining(startDate) : '';
+      
+      card.innerHTML = `
+        <div class="call-header">
+          <h3 class="call-subject">${call.subject || 'Untitled Call'}</h3>
+          ${statusBadge}
+        </div>
+        <div class="call-details">
+          <div class="call-time">
+            <span class="date">${dateStr}</span>
+            <span class="time">${timeStr}</span>
+            ${timeRemaining}
+          </div>
+          <div class="call-actions">
+            <a href="${call.url}" class="join-button" target="_blank" rel="noopener noreferrer">
+              ${isPast ? 'View Details' : 'Join Call'}
+            </a>
+            <button class="copy-button" onclick="copyToClipboard('${call.url}')" title="Copy link">
+              📋
+            </button>
+          </div>
+        </div>
+      `;
+      
+      return card;
+    }
+
+    function updateCallLists() {
+      const now = new Date();
+      const upcomingCalls = allCalls.filter(call => {
         const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
-        const { dateStr, timeStr } = formatDateTime(startDate);
-        
-        const card = document.createElement('div');
-        card.className = `call-card ${isPast ? 'past' : 'upcoming'}`;
-        
-        const statusBadge = isPast ? 
-          `<span class="status-badge past">Past</span>` : 
-          `<span class="status-badge upcoming">Upcoming</span>`;
-        
-        const timeRemaining = !isPast ? getTimeRemaining(startDate) : '';
-        
-        card.innerHTML = `
-          <div class="call-header">
-            <h3 class="call-subject">${call.subject || 'Untitled Call'}</h3>
-            ${statusBadge}
-          </div>
-          <div class="call-details">
-            <div class="call-time">
-              <span class="date">${dateStr}</span>
-              <span class="time">${timeStr}</span>
-              ${timeRemaining}
-            </div>
-            <div class="call-actions">
-              <a href="${call.url}" class="join-button" target="_blank" rel="noopener noreferrer">
-                ${isPast ? 'View Details' : 'Join Call'}
-              </a>
-              <button class="copy-button" onclick="copyToClipboard('${call.url}')" title="Copy link">
-                📋
-              </button>
-            </div>
-          </div>
-        `;
-        
-        return card;
-      }
+        return startDate >= now;
+      }).sort((a, b) => {
+        const dateA = a.start.toDate ? a.start.toDate() : new Date(a.start);
+        const dateB = b.start.toDate ? b.start.toDate() : new Date(b.start);
+        return dateA - dateB;
+      });
 
-      function getTimeRemaining(startDate) {
-        const now = new Date();
-        const diff = startDate - now;
-        
-        if (diff <= 0) return '';
-        
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        
-        if (days > 0) {
-          return `<span class="time-remaining">${days}d ${hours}h remaining</span>`;
-        } else if (hours > 0) {
-          return `<span class="time-remaining">${hours}h ${minutes}m remaining</span>`;
-        } else {
-          return `<span class="time-remaining">${minutes}m remaining</span>`;
-        }
-      }
+      const pastCalls = allCalls.filter(call => {
+        const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
+        return startDate < now;
+      }).sort((a, b) => {
+        const dateA = a.start.toDate ? a.start.toDate() : new Date(a.start);
+        const dateB = b.start.toDate ? b.start.toDate() : new Date(b.start);
+        return dateB - dateA;
+      });
 
-      function updateCallLists() {
-        const now = new Date();
-        const upcomingCalls = allCalls.filter(call => {
-          const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
-          return startDate >= now;
-        }).sort((a, b) => {
-          const dateA = a.start.toDate ? a.start.toDate() : new Date(a.start);
-          const dateB = b.start.toDate ? b.start.toDate() : new Date(b.start);
-          return dateA - dateB;
-        });
+      // Update counts
+      document.getElementById('upcoming-count').textContent = upcomingCalls.length;
+      document.getElementById('past-count').textContent = pastCalls.length;
 
-        const pastCalls = allCalls.filter(call => {
-          const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
-          return startDate < now;
-        }).sort((a, b) => {
-          const dateA = a.start.toDate ? a.start.toDate() : new Date(a.start);
-          const dateB = b.start.toDate ? b.start.toDate() : new Date(b.start);
-          return dateB - dateA;
-        });
-
-        // Update counts
-        document.getElementById('upcoming-count').textContent = upcomingCalls.length;
-        document.getElementById('past-count').textContent = pastCalls.length;
-
-        // Update upcoming calls
-        const upcomingContainer = document.getElementById('upcoming-calls');
-        upcomingContainer.innerHTML = '';
-        if (upcomingCalls.length === 0) {
-          upcomingContainer.innerHTML = '<div class="no-calls">No upcoming calls scheduled</div>';
-        } else {
-          upcomingCalls.forEach(call => {
-            upcomingContainer.appendChild(createCallCard(call, false));
-          });
-        }
-
-        // Update past calls
-        const pastContainer = document.getElementById('past-calls');
-        pastContainer.innerHTML = '';
-        if (pastCalls.length === 0) {
-          pastContainer.innerHTML = '<div class="no-calls">No past calls found</div>';
-        } else {
-          pastCalls.forEach(call => {
-            pastContainer.appendChild(createCallCard(call, true));
-          });
-        }
-
-        // Show the calls container
-        document.getElementById('calls-container').style.display = 'block';
-        document.getElementById('loading').style.display = 'none';
-      }
-
-      function showTab(tabName) {
-        currentTab = tabName;
-        
-        // Update tab buttons
-        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-        document.getElementById(`${tabName}-tab`).classList.add('active');
-        
-        // Update content
-        document.querySelectorAll('.call-list').forEach(list => list.style.display = 'none');
-        document.getElementById(`${tabName}-calls`).style.display = 'block';
-      }
-
-      function showError(message) {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('error-message').textContent = message;
-        document.getElementById('error').style.display = 'block';
-        console.error("Error:", message);
-      }
-
-      function copyToClipboard(text) {
-        navigator.clipboard.writeText(text).then(() => {
-          // Show a brief success message
-          const button = event.target.closest('.copy-button');
-          const originalText = button.innerHTML;
-          button.innerHTML = '✓';
-          button.style.background = '#4caf50';
-          setTimeout(() => {
-            button.innerHTML = originalText;
-            button.style.background = '';
-          }, 1000);
-        }).catch(err => {
-          console.error('Failed to copy: ', err);
+      // Update upcoming calls
+      const upcomingContainer = document.getElementById('upcoming-calls');
+      upcomingContainer.innerHTML = '';
+      if (upcomingCalls.length === 0) {
+        upcomingContainer.innerHTML = '<div class="no-calls">No upcoming calls scheduled</div>';
+      } else {
+        upcomingCalls.forEach(call => {
+          upcomingContainer.appendChild(createCallCard(call, false));
         });
       }
 
-      // Load all calls
-      function loadAllCalls() {
-        db.collection("calls")
-          .orderBy("start", "desc")
-          .onSnapshot(
-            snapshot => {
-              console.log("Snapshot received:", snapshot.size, "documents");
-              allCalls = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-              }));
-              updateCallLists();
-            },
-            error => {
-              console.error("Firestore error:", error);
-              showError(`Database error: ${error.message}`);
-            }
-          );
+      // Update past calls
+      const pastContainer = document.getElementById('past-calls');
+      pastContainer.innerHTML = '';
+      if (pastCalls.length === 0) {
+        pastContainer.innerHTML = '<div class="no-calls">No past calls found</div>';
+      } else {
+        pastCalls.forEach(call => {
+          pastContainer.appendChild(createCallCard(call, true));
+        });
       }
 
-      // Initialize
-      loadAllCalls();
+      // Show the calls container
+      document.getElementById('calls-container').style.display = 'block';
+      document.getElementById('loading').style.display = 'none';
+    }
 
-      // Make functions global for onclick handlers
-      window.showTab = showTab;
-      window.copyToClipboard = copyToClipboard;
+    function showTab(tabName) {
+      currentTab = tabName;
+      
+      // Update tab buttons
+      document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`${tabName}-tab`).classList.add('active');
+      
+      // Update content
+      document.querySelectorAll('.call-list').forEach(list => list.style.display = 'none');
+      document.getElementById(`${tabName}-calls`).style.display = 'block';
+    }
 
-    } catch (error) {
-      console.error("Firebase initialization error:", error);
-      showError(`Initialization error: ${error.message}`);
+    function showError(message) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error-message').textContent = message;
+      document.getElementById('error').style.display = 'block';
+      console.error("Error:", message);
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        // Show a brief success message
+        const button = event.target.closest('.copy-button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '✓';
+        button.style.background = '#4caf50';
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.style.background = '';
+        }, 1000);
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+      });
+    }
+
+    // Wait for DOM and Firebase to be ready
+    function initializeApp() {
+      try {
+        // Check if Firebase is available
+        if (typeof firebase === 'undefined') {
+          throw new Error('Firebase SDK not loaded');
+        }
+        
+        console.log("Firebase SDK loaded:", firebase);
+        console.log("Firebase app module:", firebase.app);
+        console.log("Firebase firestore module:", firebase.firestore);
+        
+        // Initialize Firebase
+        const app = firebase.initializeApp(window.firebaseConfig);
+        console.log("Firebase app initialized:", app);
+        
+        const db = firebase.firestore();
+        console.log("Firestore initialized:", db);
+
+        // Load all calls
+        function loadAllCalls() {
+          db.collection("calls")
+            .orderBy("start", "desc")
+            .onSnapshot(
+              snapshot => {
+                console.log("Snapshot received:", snapshot.size, "documents");
+                allCalls = snapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data()
+                }));
+                updateCallLists();
+              },
+              error => {
+                console.error("Firestore error:", error);
+                showError(`Database error: ${error.message}`);
+              }
+            );
+        }
+
+        // Initialize
+        loadAllCalls();
+
+        // Make functions global for onclick handlers
+        window.showTab = showTab;
+        window.copyToClipboard = copyToClipboard;
+
+      } catch (error) {
+        console.error("Firebase initialization error:", error);
+        showError(`Initialization error: ${error.message}`);
+      }
+    }
+
+    // Initialize when everything is loaded
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initializeApp);
+    } else {
+      // DOM is already loaded
+      setTimeout(initializeApp, 100); // Small delay to ensure Firebase scripts are loaded
     }
   </script>
 </body>
