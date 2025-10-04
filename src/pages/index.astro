@@ -163,9 +163,13 @@
     }
 
     function updateCallLists() {
+      console.log("updateCallLists called with allCalls:", allCalls);
       const now = new Date();
+      console.log("Current time:", now);
+      
       const upcomingCalls = allCalls.filter(call => {
         const startDate = call.start.toDate ? call.start.toDate() : new Date(call.start);
+        console.log("Checking call:", call.subject, "Start:", startDate, "Is future:", startDate >= now);
         return startDate >= now;
       }).sort((a, b) => {
         const dateA = a.start.toDate ? a.start.toDate() : new Date(a.start);
@@ -181,6 +185,9 @@
         const dateB = b.start.toDate ? b.start.toDate() : new Date(b.start);
         return dateB - dateA;
       });
+
+      console.log("Upcoming calls:", upcomingCalls);
+      console.log("Past calls:", pastCalls);
 
       // Update main interface (simple view)
       updateMainInterface(upcomingCalls);
@@ -308,19 +315,36 @@
 
         // Load all calls
         function loadAllCalls() {
+          console.log("Attempting to load calls from Firestore...");
+          
+          // First, let's try a simple query to see what's in the database
+          db.collection("calls").get().then(snapshot => {
+            console.log("Direct query - Total documents:", snapshot.size);
+            snapshot.forEach(doc => {
+              console.log("Document:", doc.id, doc.data());
+            });
+          }).catch(err => {
+            console.error("Direct query error:", err);
+          });
+
+          // Then set up the real-time listener
           db.collection("calls")
             .orderBy("start", "desc")
             .onSnapshot(
               snapshot => {
-                console.log("Snapshot received:", snapshot.size, "documents");
+                console.log("Real-time snapshot received:", snapshot.size, "documents");
+                snapshot.forEach(doc => {
+                  console.log("Real-time doc:", doc.id, doc.data());
+                });
                 allCalls = snapshot.docs.map(doc => ({
                   id: doc.id,
                   ...doc.data()
                 }));
+                console.log("All calls array:", allCalls);
                 updateCallLists();
               },
               error => {
-                console.error("Firestore error:", error);
+                console.error("Firestore real-time error:", error);
                 showError(`Database error: ${error.message}`);
               }
             );
