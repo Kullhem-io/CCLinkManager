@@ -25,15 +25,11 @@
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>CC Link Manager</h1>
-      <p class="subtitle">Zoom Call Management & Troubleshooting</p>
-    </header>
-
-    <main>
+    <!-- Main simple interface for kids -->
+    <main class="main-interface" id="main-interface">
       <div class="loading" id="loading">
         <div class="spinner"></div>
-        <p>Loading calls...</p>
+        <p>Loading next call...</p>
       </div>
 
       <div class="error" id="error" style="display:none;">
@@ -41,7 +37,27 @@
         <p id="error-message"></p>
       </div>
 
-      <div class="calls-container" id="calls-container" style="display:none;">
+      <div class="next-call" id="next-call" style="display:none;">
+        <div class="call-time" id="call-time"></div>
+        <a id="join-button" class="join-button" href="#" target="_blank">
+          Join Call
+        </a>
+        <div class="call-subject" id="call-subject"></div>
+      </div>
+
+      <div class="no-calls" id="no-calls" style="display:none;">
+        <p>No upcoming calls scheduled</p>
+      </div>
+    </main>
+
+    <!-- Admin/Troubleshooting interface -->
+    <div class="admin-interface" id="admin-interface" style="display:none;">
+      <header>
+        <h1>Call Management</h1>
+        <button class="back-button" onclick="showMainInterface()">← Back to Simple View</button>
+      </header>
+
+      <div class="calls-container">
         <div class="tabs">
           <button class="tab-button active" id="upcoming-tab" onclick="showTab('upcoming')">
             Upcoming Calls
@@ -62,7 +78,12 @@
           </div>
         </div>
       </div>
-    </main>
+    </div>
+
+    <!-- Admin access button -->
+    <button class="admin-button" id="admin-button" onclick="showAdminInterface()" title="Admin Access">
+      ⚙️
+    </button>
   </div>
 
   <script>
@@ -161,6 +182,38 @@
         return dateB - dateA;
       });
 
+      // Update main interface (simple view)
+      updateMainInterface(upcomingCalls);
+
+      // Update admin interface
+      updateAdminInterface(upcomingCalls, pastCalls);
+
+      // Hide loading
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    function updateMainInterface(upcomingCalls) {
+      const nextCallElement = document.getElementById('next-call');
+      const noCallsElement = document.getElementById('no-calls');
+      
+      if (upcomingCalls.length === 0) {
+        nextCallElement.style.display = 'none';
+        noCallsElement.style.display = 'block';
+      } else {
+        const nextCall = upcomingCalls[0];
+        const startDate = nextCall.start.toDate ? nextCall.start.toDate() : new Date(nextCall.start);
+        const { dateStr, timeStr } = formatDateTime(startDate);
+        
+        document.getElementById('call-time').textContent = `${dateStr} at ${timeStr}`;
+        document.getElementById('call-subject').textContent = nextCall.subject || 'Untitled Call';
+        document.getElementById('join-button').href = nextCall.url;
+        
+        nextCallElement.style.display = 'block';
+        noCallsElement.style.display = 'none';
+      }
+    }
+
+    function updateAdminInterface(upcomingCalls, pastCalls) {
       // Update counts
       document.getElementById('upcoming-count').textContent = upcomingCalls.length;
       document.getElementById('past-count').textContent = pastCalls.length;
@@ -186,10 +239,6 @@
           pastContainer.appendChild(createCallCard(call, true));
         });
       }
-
-      // Show the calls container
-      document.getElementById('calls-container').style.display = 'block';
-      document.getElementById('loading').style.display = 'none';
     }
 
     function showTab(tabName) {
@@ -225,6 +274,18 @@
       }).catch(err => {
         console.error('Failed to copy: ', err);
       });
+    }
+
+    function showMainInterface() {
+      document.getElementById('main-interface').style.display = 'block';
+      document.getElementById('admin-interface').style.display = 'none';
+      document.getElementById('admin-button').style.display = 'block';
+    }
+
+    function showAdminInterface() {
+      document.getElementById('main-interface').style.display = 'none';
+      document.getElementById('admin-interface').style.display = 'block';
+      document.getElementById('admin-button').style.display = 'none';
     }
 
     // Wait for DOM and Firebase to be ready
@@ -272,6 +333,8 @@
         // Make functions global for onclick handlers
         window.showTab = showTab;
         window.copyToClipboard = copyToClipboard;
+        window.showMainInterface = showMainInterface;
+        window.showAdminInterface = showAdminInterface;
 
       } catch (error) {
         console.error("Firebase initialization error:", error);
@@ -303,30 +366,130 @@
     min-height: 100vh;
     color: #333;
     line-height: 1.6;
+    margin: 0;
+    padding: 0;
   }
 
   .container {
-    max-width: 1200px;
-    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* Main simple interface for kids */
+  .main-interface {
+    text-align: center;
+    color: white;
+    width: 100%;
+    max-width: 600px;
     padding: 2rem;
   }
 
-  header {
+  .next-call {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .call-time {
+    font-size: 1.5rem;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  }
+
+  .join-button {
+    background: #4caf50;
+    color: white;
+    padding: 2rem 4rem;
+    border-radius: 20px;
+    text-decoration: none;
+    font-size: 2rem;
+    font-weight: 700;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    display: inline-block;
+  }
+
+  .join-button:hover {
+    background: #45a049;
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  }
+
+  .call-subject {
+    font-size: 1.2rem;
+    opacity: 0.9;
+    font-weight: 500;
+  }
+
+  .no-calls {
+    color: white;
+    font-size: 1.5rem;
+    opacity: 0.8;
+  }
+
+  /* Admin interface */
+  .admin-interface {
+    max-width: 1200px;
+    width: 100%;
+    padding: 2rem;
+  }
+
+  .admin-interface header {
     text-align: center;
     margin-bottom: 3rem;
     color: white;
   }
 
-  header h1 {
+  .admin-interface h1 {
     font-size: 3rem;
     font-weight: 700;
-    margin-bottom: 0.5rem;
+    margin-bottom: 1rem;
     text-shadow: 0 2px 4px rgba(0,0,0,0.3);
   }
 
-  .subtitle {
+  .back-button {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+  }
+
+  .back-button:hover {
+    background: rgba(255,255,255,0.3);
+  }
+
+  /* Admin button */
+  .admin-button {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    cursor: pointer;
     font-size: 1.2rem;
-    opacity: 0.9;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+  }
+
+  .admin-button:hover {
+    background: rgba(255,255,255,0.3);
+    transform: scale(1.1);
   }
 
   .loading {
@@ -365,7 +528,7 @@
     margin-bottom: 0.5rem;
   }
 
-  .calls-container {
+  .admin-interface .calls-container {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 16px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.1);
@@ -524,7 +687,7 @@
     align-items: center;
   }
 
-  .join-button {
+  .admin-interface .join-button {
     background: #667eea;
     color: white;
     padding: 0.8rem 1.5rem;
@@ -537,7 +700,7 @@
     font-size: 0.9rem;
   }
 
-  .join-button:hover {
+  .admin-interface .join-button:hover {
     background: #5a6fd8;
     transform: translateY(-1px);
   }
